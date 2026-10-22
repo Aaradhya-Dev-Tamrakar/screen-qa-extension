@@ -122,6 +122,24 @@
     button.btn-primary:hover {
       background: #166534;
     }
+    button.btn-action {
+      background: #27272a;
+      color: #f4f4f5;
+      border: 1px solid #3f3f46;
+      padding: 6px 10px;
+      border-radius: 6px;
+      font-size: 11px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+    button.btn-action:hover {
+      background: #3f3f46;
+    }
+    button.btn-action:disabled {
+      opacity: 0.5;
+      cursor: default;
+    }
     .empty-state {
       text-align: center;
       padding: 32px 16px;
@@ -151,7 +169,7 @@
 <body>
   <header>
     <div class="brand-title">Screen Q&A Study Drawer</div>
-    <div class="status-pill" id="statusPill">Checking Fleet…</div>
+    <div class="status-pill" id="statusPill">Checking Fleetâ€¦</div>
   </header>
 
   <div class="section-title">Active Tab Questions</div>

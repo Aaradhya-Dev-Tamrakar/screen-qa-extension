@@ -23,7 +23,7 @@ async function getDirectApiKey() {
 // 1. Primary: Fleet-Orchestrator 31-Key Rotator & Consensus Engine
 async function askFleetOrchestrator(question, context, mode) {
   const controller = new AbortController();
-  const timeoutMs = mode === "deep_consensus" ? 10000 : 5000;
+  const timeoutMs = 30000; // Copilot Fleet allowance
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
   try {
