@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Screen Q&amp;A pairing link fixture</title>
+  <style>
+    body { max-width: 560px; margin: 40px auto; padding: 0 18px; font: 16px/1.5 system-ui, sans-serif; color: #172033; }
+    main { padding: 22px; border: 1px solid #dce2ec; border-radius: 12px; }
+    h1 { font-size: 22px; }
+    dt { margin-top: 14px; font-weight: 700; }
+    dd { margin-left: 0; overflow-wrap: anywhere; }
+    .notice { color: #526078; font-size: 14px; }
+    #result[data-state="error"] { color: #a4262c; }
+    #result[data-state="success"] { color: #176b36; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Pairing-link test fixture</h1>
+    <p class="notice">Local UI test only. This page does not pair a device or contact a service. Do not use a production token here.</p>
+    <p id="result" role="status" aria-live="polite">Checking pairing-link parameters…</p>
+    <dl>
+      <dt>Pairing token parameter</dt>
+      <dd id="tokenState">Not checked</dd>
+      <dt>Fixture path</dt>
+      <dd id="fixturePath"></dd>
+    </dl>
+  </main>
+  <script>
+    const params = new URLSearchParams(window.location.search);
+    const token = params.get("pairing_token");
+    const result = document.getElementById("result");
+    document.getElementById("fixturePath").textContent = window.location.pathname;
+    document.getElementById("tokenState").textContent = token ? "Present" : "Missing";
+
+    if (token) {
+      result.dataset.state = "success";
+      result.textContent = "Pairing link contains the expected pairing_token parameter.";
+    } else {
+      result.dataset.state = "error";
+      result.textContent = "Pairing token is missing. Add ?pairing_token=fixture-token to this URL to test.";
+    }
+  </script>
+</body>
+</html>

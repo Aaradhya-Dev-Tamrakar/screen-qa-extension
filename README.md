@@ -48,6 +48,12 @@ screen-qa-extension/
 5. Right-click the extension icon in your browser toolbar, select **Options** (or open details > Extension options).
 6. Enter your Google Gemini API key (`AIza...`) and click **Save**.
 
+### Phone pairing UI scaffold
+
+The options page includes fields for a Lens service URL and a locally stored pairing token. Generate a token, save the settings, then copy the resulting pairing link. The QR preview is intentionally a placeholder; QR generation and a phone-side pairing service are not implemented yet. Do not treat the scaffold token as authentication until the Lens service validates it.
+
+The local link-handling fixture at `tests/fixtures/pairing-link.html` can be opened with a `pairing_token` query parameter to verify that a generated link carries the expected parameter. It does not perform device pairing or contact a server.
+
 ---
 
 ## Architecture & Data Flow

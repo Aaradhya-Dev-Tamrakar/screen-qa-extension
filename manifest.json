@@ -1,14 +1,19 @@
 {
   "manifest_version": 3,
   "name": "Screen Q&A",
-  "version": "0.1.0",
-  "description": "Detects question-like text on the page and answers it via Gemini Flash.",
-  "permissions": ["storage", "activeTab", "scripting"],
+  "version": "0.3.0",
+  "description": "Continuous ambient in-page Q&A HUD, SidePanel companion, and Mobile Lens powered by Fleet-Orchestrator & Gemini Flash.",
+  "permissions": ["storage", "activeTab", "scripting", "sidePanel"],
   "host_permissions": [
-    "https://generativelanguage.googleapis.com/*"
+    "https://generativelanguage.googleapis.com/*",
+    "http://127.0.0.1:8000/*",
+    "http://localhost:8000/*"
   ],
   "background": {
     "service_worker": "background.js"
+  },
+  "side_panel": {
+    "default_path": "sidepanel.html"
   },
   "content_scripts": [
     {
@@ -18,9 +23,17 @@
       "run_at": "document_idle"
     }
   ],
+  "commands": {
+    "toggle-scan": {
+      "suggested_key": {
+        "default": "Alt+Q"
+      },
+      "description": "Toggle ambient Q&A scanning on/off"
+    }
+  },
   "options_page": "options.html",
   "action": {
-    "default_title": "Screen Q&A"
+    "default_title": "Screen Q&A (Click to open SidePanel)"
   },
   "icons": {
     "16": "icons/icon16.png",

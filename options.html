@@ -1,21 +1,69 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
   <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Screen Q&A — Options</title>
   <style>
-    body { font-family: system-ui, sans-serif; padding: 16px; width: 320px; }
-    label { display: block; margin-bottom: 4px; font-size: 13px; color: #333; }
-    input { width: 100%; padding: 6px 8px; box-sizing: border-box; margin-bottom: 8px; }
-    button { padding: 6px 12px; cursor: pointer; }
-    #status { font-size: 12px; margin-top: 8px; color: #2a7a2a; }
+    :root {
+      color-scheme: light;
+      font-family: system-ui, sans-serif;
+      color: #172033;
+      background: #f4f6fa;
+    }
+    body { box-sizing: border-box; max-width: 680px; margin: 0 auto; padding: 28px 20px; }
+    h1 { margin: 0 0 20px; font-size: 24px; }
+    section { margin: 16px 0; padding: 20px; border: 1px solid #dce2ec; border-radius: 12px; background: #fff; }
+    h2 { margin: 0 0 16px; font-size: 17px; }
+    label { display: block; margin: 12px 0 5px; font-size: 13px; font-weight: 600; }
+    input { box-sizing: border-box; width: 100%; padding: 9px 10px; border: 1px solid #b8c2d2; border-radius: 6px; font: inherit; }
+    button { padding: 8px 12px; border: 0; border-radius: 6px; background: #2258c7; color: #fff; font: inherit; cursor: pointer; }
+    button.secondary { border: 1px solid #b8c2d2; background: #fff; color: #172033; }
+    button:focus-visible, input:focus-visible { outline: 3px solid #8ab4ff; outline-offset: 2px; }
+    .actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+    .hint, #status, #pairingStatus { color: #526078; font-size: 13px; line-height: 1.5; }
+    #qrPlaceholder { display: grid; min-height: 164px; place-content: center; margin-top: 14px; padding: 16px; border: 1px dashed #9aa7bb; border-radius: 8px; background: #f8f9fc; text-align: center; }
+    #qrPlaceholder strong { margin-bottom: 5px; }
+    [hidden] { display: none !important; }
+    @media (max-width: 480px) { body { padding: 16px 12px; } section { padding: 16px; } }
   </style>
 </head>
 <body>
-  <label for="apiKey">Gemini API key</label>
-  <input type="password" id="apiKey" placeholder="AIza..." />
-  <button id="save">Save</button>
-  <div id="status"></div>
+  <main>
+    <h1>Screen Q&amp;A settings</h1>
+    <section aria-labelledby="apiHeading">
+      <h2 id="apiHeading">Gemini API</h2>
+      <label for="apiKey">Gemini API key</label>
+      <input type="password" id="apiKey" autocomplete="off" placeholder="AIza..." />
+      <div class="actions">
+        <button id="save">Save API key</button>
+      </div>
+      <div id="status" role="status" aria-live="polite"></div>
+    </section>
+
+    <section aria-labelledby="pairingHeading">
+      <h2 id="pairingHeading">Pair with a phone</h2>
+      <p class="hint">Configure the address of your Lens service. Use an address reachable from your phone; localhost only works on this computer.</p>
+      <label for="lensUrl">Lens service URL</label>
+      <input id="lensUrl" type="url" inputmode="url" autocomplete="url" placeholder="http://192.168.1.10:8000/lens" />
+      <label for="pairingToken">Pairing token</label>
+      <input id="pairingToken" type="text" autocomplete="off" spellcheck="false" />
+      <div class="actions">
+        <button class="secondary" id="generateToken" type="button">Generate token</button>
+        <button id="savePairing" type="button">Save pairing settings</button>
+      </div>
+      <label for="pairingLink">Pairing link</label>
+      <input id="pairingLink" type="url" readonly aria-describedby="pairingStatus" />
+      <div class="actions">
+        <button class="secondary" id="copyPairingLink" type="button">Copy pairing link</button>
+      </div>
+      <div id="pairingStatus" role="status" aria-live="polite"></div>
+      <div id="qrPlaceholder" role="group" aria-labelledby="qrPlaceholderHeading">
+        <strong id="qrPlaceholderHeading">QR preview</strong>
+        <span class="hint">QR generation is not configured yet. Use the pairing link above for now.</span>
+      </div>
+    </section>
+  </main>
   <script src="options.js"></script>
 </body>
 </html>
