@@ -1,13 +1,14 @@
 {
   "manifest_version": 3,
   "name": "Screen Q&A",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "Continuous ambient in-page Q&A HUD, SidePanel companion, and Mobile Lens powered by Fleet-Orchestrator & Gemini Flash.",
   "permissions": ["storage", "activeTab", "scripting", "sidePanel"],
   "host_permissions": [
     "https://generativelanguage.googleapis.com/*",
-    "http://127.0.0.1:8000/*",
-    "http://localhost:8000/*"
+    "http://127.0.0.1:*/*",
+    "http://localhost:*/*",
+    "http://192.168.*:*/*"
   ],
   "background": {
     "service_worker": "background.js"

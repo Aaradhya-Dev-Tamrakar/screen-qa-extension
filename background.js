@@ -4,7 +4,7 @@
 
 const FLEET_ENDPOINT = "http://127.0.0.1:8000/api/v1/qa/ask";
 const DIRECT_GEMINI_ENDPOINT =
-  "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent";
+  "https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent";
 
 let isScanningEnabled = true;
 
@@ -23,7 +23,7 @@ async function getDirectApiKey() {
 // 1. Primary: Fleet-Orchestrator 31-Key Rotator & Consensus Engine
 async function askFleetOrchestrator(question, context, mode) {
   const controller = new AbortController();
-  const timeoutMs = mode === "deep_consensus" ? 6000 : 1800;
+  const timeoutMs = mode === "deep_consensus" ? 10000 : 5000;
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
   try {
