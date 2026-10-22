@@ -1,4 +1,4 @@
-// background.js — Screen Q&A v0.3.0 MV3 Service Worker
+// background.js â€” Screen Q&A v0.3.0 MV3 Service Worker
 // Manages hybrid Fleet-Orchestrator routing with fallback, side panel dispatch,
 // and Alt+Q scan toggle command handling.
 

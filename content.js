@@ -1,4 +1,4 @@
-// content.js — Screen Q&A v0.3.1 (Adaptive Question HUD & Continuous Multi-Page Perception)
+// content.js — Screen Q&A v0.4.0 (Adaptive Question HUD & Continuous Multi-Page Perception)
 // Operates passively in closed Shadow DOM with pointer-events transparency.
 // Zero hotkey reliance, zero mouse interception, self-healing multi-page cleanup.
 
@@ -7,6 +7,9 @@ const seen = new Set();
 let isScanActive = true;
 const activeOverlays = new Map();
 let lastUrl = window.location.href;
+let _pendingRequests = 0;
+const MAX_CONCURRENT_REQUESTS = 3; // Throttle to avoid 429 bursts
+const REQUEST_STAGGER_MS = 600;    // Minimum gap between API calls
 
 // Closed Shadow DOM CSS
 const SHADOW_STYLE = `
@@ -16,19 +19,22 @@ const SHADOW_STYLE = `
   .screen-qa-overlay {
     position: absolute;
     z-index: 2147483647;
-    max-width: 420px;
+    max-width: 320px;
     padding: 8px 12px;
     background: rgba(15, 17, 23, 0.95);
     color: #f1f5f9;
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-    font-size: 13px;
-    line-height: 1.45;
+    font-size: 12px;
+    line-height: 1.4;
     border-radius: 8px;
-    box-shadow: 0 4px 18px rgba(0, 0, 0, 0.5);
-    border: 1px solid rgba(255, 255, 255, 0.14);
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.6);
+    border: 1px solid rgba(255, 255, 255, 0.16);
     backdrop-filter: blur(8px);
-    pointer-events: none; /* Clicks pass straight through to radio buttons */
+    pointer-events: auto; /* Allows hover and interaction without blocking quiz clicks */
     transition: opacity 0.2s ease, transform 0.2s ease;
+  }
+  .screen-qa-overlay:hover {
+    opacity: 0.2; /* Subtly fades away completely on hover so you can read beneath if needed */
   }
   .screen-qa-overlay.loading {
     opacity: 0.75;
@@ -79,6 +85,15 @@ const SHADOW_STYLE = `
 // Extract questions from standard text, Google Forms, and assessment containers
 function extractQuestions(root) {
   if (!isScanActive) return [];
+
+  // Skip Google Forms viewscore/review pages (already submitted — no point answering)
+  const url = window.location.href;
+  const isViewScore = url.includes("/viewscore") || url.includes("/viewanalytics") || (url.includes("viewform") === false && document.querySelector('.freebirdFormviewerViewResponseConfirmationMessage') !== null);
+  if (isViewScore) {
+    cleanupAllOverlays();
+    return [];
+  }
+
   const results = [];
 
   // 1. Google Forms & assessment card containers
@@ -225,10 +240,27 @@ function createClosedShadowOverlay(anchorEl) {
 function updatePositions(anchorEl, host, overlayDiv, optionDiv, targetOptionEl) {
   if (!anchorEl || !anchorEl.isConnected) return;
   const rect = anchorEl.getBoundingClientRect();
-  const top = window.scrollY + rect.bottom + 4;
-  const left = window.scrollX + Math.max(10, rect.left);
-  overlayDiv.style.top = `${top}px`;
-  overlayDiv.style.left = `${left}px`;
+
+  // Position overlay safely to the RIGHT side or left gutter, NEVER covering question or choices
+  const viewportWidth = window.innerWidth;
+  const preferredRight = window.scrollX + rect.right + 18;
+  const fitsRight = (rect.right + 340) < viewportWidth;
+
+  if (fitsRight) {
+    overlayDiv.style.left = `${preferredRight}px`;
+    overlayDiv.style.top = `${window.scrollY + rect.top}px`;
+  } else {
+    // Left-gutter placement or top-banner above question
+    const leftGutter = window.scrollX + Math.max(12, rect.left - 335);
+    if (rect.left > 340) {
+      overlayDiv.style.left = `${leftGutter}px`;
+      overlayDiv.style.top = `${window.scrollY + rect.top}px`;
+    } else {
+      // Float neatly directly above question text
+      overlayDiv.style.left = `${window.scrollX + rect.left}px`;
+      overlayDiv.style.top = `${window.scrollY + Math.max(10, rect.top - 46)}px`;
+    }
+  }
 
   // Position option highlight directly on the winning radio button
   if (targetOptionEl && targetOptionEl.isConnected) {
@@ -292,10 +324,22 @@ function showAdaptiveAnswer(anchorEl, containerEl, question, answerText, isLoadi
   activeOverlays.set(anchorEl, { host, overlayDiv, optionDiv, targetOptionEl, question, answerText });
 }
 
+function removeOverlay(anchorNode) {
+  const data = activeOverlays.get(anchorNode);
+  if (data && data.host && data.host.parentNode) {
+    data.host.parentNode.removeChild(data.host);
+  }
+  activeOverlays.delete(anchorNode);
+}
+
 function handleQuestionItem(item) {
   const { questionText, anchorNode, containerNode } = item;
   seen.add(questionText);
   showAdaptiveAnswer(anchorNode, containerNode, questionText, "", true);
+
+  // Throttle: wait if too many concurrent requests
+  if (_pendingRequests >= MAX_CONCURRENT_REQUESTS) return;
+  _pendingRequests++;
 
   const contextBlock = hoistQuestionContext(containerNode, anchorNode, questionText);
 
@@ -307,12 +351,11 @@ function handleQuestionItem(item) {
       mode: "fast_hud",
     },
     (response) => {
-      if (chrome.runtime.lastError) {
-        showAdaptiveAnswer(anchorNode, containerNode, questionText, `Error: ${chrome.runtime.lastError.message}`, false);
-        return;
-      }
-      if (response?.error) {
-        showAdaptiveAnswer(anchorNode, containerNode, questionText, `Error: ${response.error}`, false);
+      _pendingRequests = Math.max(0, _pendingRequests - 1);
+      if (chrome.runtime.lastError || response?.error) {
+        // DO NOT persist ugly raw 429 JSON blobs on user screen; remove loading overlay cleanly
+        console.warn("[Screen Q&A Backend Error]", chrome.runtime.lastError?.message || response?.error);
+        removeOverlay(anchorNode);
         return;
       }
       showAdaptiveAnswer(
@@ -325,6 +368,16 @@ function handleQuestionItem(item) {
       );
     }
   );
+}
+
+// Clean up all overlays
+function cleanupAllOverlays() {
+  for (const [anchor, data] of activeOverlays.entries()) {
+    if (data.host && data.host.parentNode) {
+      data.host.parentNode.removeChild(data.host);
+    }
+  }
+  activeOverlays.clear();
 }
 
 // Clean up disconnected / stale overlays (e.g. Next button clicked on multi-page forms)
