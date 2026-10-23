@@ -87,8 +87,14 @@ function extractQuestions(root) {
   if (!isScanActive) return [];
 
   // Skip Google Forms viewscore/review pages (already submitted — no point answering)
-  const url = window.location.href;
-  const isViewScore = url.includes("/viewscore") || url.includes("/viewanalytics") || (url.includes("viewform") === false && document.querySelector('.freebirdFormviewerViewResponseConfirmationMessage') !== null);
+  const url = window.location.href.toLowerCase();
+  const isViewScore = url.includes("viewscore") || 
+                      url.includes("viewanalytics") || 
+                      url.includes("formResponse") ||
+                      document.querySelector('.freebirdFormviewerViewResponseConfirmationMessage') !== null ||
+                      document.querySelector('.freebirdFormviewerViewHeaderGrade') !== null ||
+                      document.querySelector('[data-item-id]')?.querySelector('span[aria-label*="points"]') !== null;
+
   if (isViewScore) {
     cleanupAllOverlays();
     return [];
@@ -442,6 +448,28 @@ observer.observe(document.body, {
   childList: true,
   subtree: true,
   characterData: true,
+});
+
+// Listen for toggle scan commands from background / Alt+Q
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message?.type === "TOGGLE_SCAN") {
+    isScanActive = Boolean(message.isActive);
+    if (!isScanActive) {
+      cleanupAllOverlays();
+    } else {
+      debouncedScan();
+    }
+    sendResponse({ ok: true, isScanActive });
+    return true;
+  }
+  if (message?.type === "GET_PAGE_QUESTIONS") {
+    const list = Array.from(activeOverlays.values()).map((d) => ({
+      question: d.question,
+      answer: d.answerText,
+    }));
+    sendResponse({ questions: list });
+    return true;
+  }
 });
 
 // Initial scan
