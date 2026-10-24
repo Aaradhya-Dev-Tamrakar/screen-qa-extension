@@ -104,11 +104,16 @@ function extractQuestions(root) {
 
   // 1. Google Forms & assessment card containers
   const assessmentContainers = root.querySelectorAll(
-    'div[role="listitem"], .geSWh, .freebirdFormviewerViewNumberedItemContent, .que, .question-view'
+    'div[role="listitem"], .geSWh, .freebirdFormviewerViewNumberedItemContent, .que, .question-view, .question-card, .question, [class*="question-card"], [class*="question_card"], [class*="QuestionCard"], [data-question-id], fieldset'
   );
 
   for (const container of assessmentContainers) {
-    const headingEl = container.querySelector('div[role="heading"], .M7eMe, .qtext, h2, h3, legend');
+    let headingEl = container.querySelector(
+      'div[role="heading"], .M7eMe, .qtext, .q-text, [class*="q-text"], [class*="question-text"], [class*="question_text"], [class*="QuestionText"], .prompt, h2, h3, h4, legend'
+    );
+    if (!headingEl) {
+      headingEl = container.querySelector('p, strong, b');
+    }
     if (headingEl) {
       const qText = (headingEl.innerText || headingEl.textContent || "").trim();
       if (qText.length >= 8 && !seen.has(qText)) {
@@ -183,20 +188,29 @@ function findOptionElement(containerEl, optionLetter) {
   const letter = optionLetter.toUpperCase();
   const letterIndex = letter.charCodeAt(0) - 65; // A=0, B=1, C=2, D=3
 
-  // 1. Google Forms radio buttons & labels
+  // Google Forms radio buttons, custom quiz options, and labels
   const radios = containerEl.querySelectorAll(
-    'div[role="radio"], div[role="checkbox"], label, div.docssharedWizToggleLabeledContainer, .answer div, .option'
+    'div[role="radio"], div[role="checkbox"], label, div.docssharedWizToggleLabeledContainer, .answer div, .option, .option-item, [class*="option-item"], [class*="optionItem"], [class*="choice"], li'
   );
 
-  if (radios.length > letterIndex && letterIndex >= 0) {
-    // Check if explicitly matching letter index or text
+  if (radios.length > 0) {
+    // Check if explicitly matching letter prefix or span with letter
     for (const r of radios) {
-      const text = (r.innerText || "").trim();
-      if (text.startsWith(letter + ")") || text.startsWith(letter + ".") || text.startsWith(`Option ${letter}`)) {
+      const text = (r.innerText || r.textContent || "").trim();
+      if (
+        text.startsWith(letter + ")") ||
+        text.startsWith(letter + ".") ||
+        text.startsWith(letter + ":") ||
+        text.startsWith(`Option ${letter}`) ||
+        text.startsWith(`(${letter})`) ||
+        new RegExp(`^\\s*${letter}\\b`, "i").test(text)
+      ) {
         return r;
       }
     }
-    return radios[letterIndex];
+    if (letterIndex >= 0 && letterIndex < radios.length) {
+      return radios[letterIndex];
+    }
   }
 
   return null;
@@ -289,6 +303,15 @@ function showAdaptiveAnswer(anchorEl, containerEl, question, answerText, isLoadi
     overlayDiv.classList.add("loading");
     optionDiv.style.display = "none";
     updatePositions(anchorEl, host, overlayDiv, optionDiv, null);
+    activeOverlays.set(anchorEl, {
+      host,
+      overlayDiv,
+      optionDiv,
+      targetOptionEl: null,
+      question,
+      answerText: "Analyzing…",
+      provenance: ["fleet_pool"],
+    });
     return;
   }
 
@@ -296,7 +319,9 @@ function showAdaptiveAnswer(anchorEl, containerEl, question, answerText, isLoadi
   overlayDiv.innerHTML = "";
 
   // 1. Detect question type: MCQ (letter candidate) vs Open-Ended
-  const matchLetter = answerText.match(/\b([A-D])\b[:.)\s]?/i) || answerText.match(/OPTION:\s*([A-D])/i);
+  const matchLetter =
+    answerText.match(/(?:^|\b)(?:Option\s*[:\-\[]?\s*)?([A-D])(?:\b|[)\]:.\-\s])/i) ||
+    answerText.match(/OPTION:\s*([A-D])/i);
   let optionLetter = matchLetter ? matchLetter[1].toUpperCase() : null;
   let targetOptionEl = null;
 
@@ -319,15 +344,23 @@ function showAdaptiveAnswer(anchorEl, containerEl, question, answerText, isLoadi
   const textNode = document.createTextNode(answerText);
   overlayDiv.appendChild(textNode);
 
-  if (provenance && (provenance.includes("copilot_headless_fallback") || provenance.includes("copilot_fallback"))) {
+  if (provenance && (provenance.includes("copilot_headless_fallback") || provenance.includes("copilot_fallback") || provenance.includes("fleet_pool"))) {
     const badge = document.createElement("span");
     badge.className = "screen-qa-badge";
-    badge.textContent = "Copilot";
+    badge.textContent = "Copilot Fleet";
     overlayDiv.appendChild(badge);
   }
 
   updatePositions(anchorEl, host, overlayDiv, optionDiv, targetOptionEl);
-  activeOverlays.set(anchorEl, { host, overlayDiv, optionDiv, targetOptionEl, question, answerText });
+  activeOverlays.set(anchorEl, {
+    host,
+    overlayDiv,
+    optionDiv,
+    targetOptionEl,
+    question,
+    answerText,
+    provenance: provenance || ["fleet_pool"],
+  });
 }
 
 function removeOverlay(anchorNode) {
@@ -338,42 +371,72 @@ function removeOverlay(anchorNode) {
   activeOverlays.delete(anchorNode);
 }
 
+// Resilient queue to prevent dropping questions and avoid 429 rate limit bursts
+const requestQueue = [];
+let isProcessingQueue = false;
+
+function enqueueQuestion(item) {
+  requestQueue.push(item);
+  processQueue();
+}
+
+async function processQueue() {
+  if (isProcessingQueue) return;
+  isProcessingQueue = true;
+
+  while (requestQueue.length > 0) {
+    if (!isScanActive) {
+      requestQueue.length = 0;
+      break;
+    }
+
+    const item = requestQueue.shift();
+    await processQuestionItem(item);
+    if (requestQueue.length > 0) {
+      await new Promise((resolve) => setTimeout(resolve, REQUEST_STAGGER_MS));
+    }
+  }
+
+  isProcessingQueue = false;
+}
+
+function processQuestionItem(item) {
+  return new Promise((resolve) => {
+    const { questionText, anchorNode, containerNode } = item;
+    const contextBlock = hoistQuestionContext(containerNode, anchorNode, questionText);
+
+    chrome.runtime.sendMessage(
+      {
+        type: "ANSWER_QUESTION",
+        question: questionText,
+        context: contextBlock,
+        mode: "fast_hud",
+      },
+      (response) => {
+        if (chrome.runtime.lastError || response?.error) {
+          console.warn("[Screen Q&A Backend Error]", chrome.runtime.lastError?.message || response?.error);
+          removeOverlay(anchorNode);
+        } else {
+          showAdaptiveAnswer(
+            anchorNode,
+            containerNode,
+            questionText,
+            response?.answer || "(no answer)",
+            false,
+            response?.provenance
+          );
+        }
+        resolve();
+      }
+    );
+  });
+}
+
 function handleQuestionItem(item) {
   const { questionText, anchorNode, containerNode } = item;
   seen.add(questionText);
   showAdaptiveAnswer(anchorNode, containerNode, questionText, "", true);
-
-  // Throttle: wait if too many concurrent requests
-  if (_pendingRequests >= MAX_CONCURRENT_REQUESTS) return;
-  _pendingRequests++;
-
-  const contextBlock = hoistQuestionContext(containerNode, anchorNode, questionText);
-
-  chrome.runtime.sendMessage(
-    {
-      type: "ANSWER_QUESTION",
-      question: questionText,
-      context: contextBlock,
-      mode: "fast_hud",
-    },
-    (response) => {
-      _pendingRequests = Math.max(0, _pendingRequests - 1);
-      if (chrome.runtime.lastError || response?.error) {
-        // DO NOT persist ugly raw 429 JSON blobs on user screen; remove loading overlay cleanly
-        console.warn("[Screen Q&A Backend Error]", chrome.runtime.lastError?.message || response?.error);
-        removeOverlay(anchorNode);
-        return;
-      }
-      showAdaptiveAnswer(
-        anchorNode,
-        containerNode,
-        questionText,
-        response?.answer || "(no answer)",
-        false,
-        response?.provenance
-      );
-    }
-  );
+  enqueueQuestion(item);
 }
 
 // Clean up all overlays
