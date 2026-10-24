@@ -1,16 +1,16 @@
-# Screen Q&A — Continuous In-Page Question Answering via Gemini Flash
+# Screen Q&A — Continuous In-Page Question Answering via Fleet-Orchestrator & Gemini Flash
 
-A lightweight Manifest V3 Chrome extension that autonomously monitors web page DOM mutations, detects question-like text prompts, queries the Google Gemini Flash API (`gemini-flash-latest`), and renders non-intrusive ambient floating overlays anchored to target questions in real time.
+A lightweight Manifest V3 Chrome extension that autonomously monitors web page DOM mutations, detects question-like text prompts and assessment cards, queries the Fleet-Orchestrator 31-worker pool (or standalone Google Gemini Flash API), and renders non-intrusive ambient floating overlays inside a closed Shadow DOM.
 
 ---
 
 ## Key Highlights
 
-- **MutationObserver Continuous Scanning**: Unlike service workers that terminate on idle, scanning runs in the page content script context via `MutationObserver`, reacting seamlessly to infinite scroll and dynamic single-page applications (SPAs).
-- **Gemini Flash Acceleration**: Direct connection to Google Gemini Flash API for rapid, high-concurrency answers.
-- **Smart DOM Anchoring**: Uses `TreeWalker` to pinpoint the most specific DOM element containing question text and anchors ambient floating UI overlays.
-- **Deduplication & Debouncing**: In-memory seen set with 500ms debounced scanning to prevent redundant API calls and rate-limiting.
-- **Zero Heavy Build Step**: Written in clean, vanilla MV3 ES JavaScript with no complex bundling required.
+- **MutationObserver Continuous Scanning**: Scanning runs in the page content script context via `MutationObserver`, reacting seamlessly to infinite scroll, multi-page forms, and dynamic single-page applications (SPAs).
+- **Hybrid Fleet-Orchestrator & Gemini Flash Routing**: Primary routing through Fleet-Orchestrator (`http://127.0.0.1:8000/api/v1/qa/ask`) with automatic zero-downtime fallback to standalone Gemini Flash (`gemini-flash-latest`).
+- **Closed Shadow DOM HUD**: Renders right/left-gutter floating overlays and MCQ option badges inside a closed Shadow Root with hover-fade transparency and `Alt+Q` toggle control.
+- **SidePanel Study Companion**: Built-in Chrome SidePanel (`sidepanel.html`) for reviewing detected questions, re-verifying answers, staging to OmniVault, and pushing answers via LocalSend.
+- **Dual Wireless Phone Relay**: Supports both the **Screen Lens PWA** (with offline QR code pairing) and **LocalSend LAN Relay** (port `53317` UDP multicast discovery + REST payload push).
 
 ---
 
@@ -22,12 +22,20 @@ screen-qa-extension/
 │   ├── icon16.png
 │   ├── icon48.png
 │   └── icon128.png
-├── background.js       # MV3 Service worker relay (Gemini API bridge)
-├── content.js          # In-page DOM observer & overlay injector
+├── tests/
+│   └── fixtures/
+│       ├── pairing-link.html
+│       └── test_quiz_dom.html
+├── background.js       # MV3 Service worker (Fleet/Gemini router + LocalSend LAN relay)
+├── content.js          # In-page DOM observer & closed Shadow DOM HUD injector
 ├── manifest.json       # Manifest V3 extension configuration
-├── options.html        # Settings page for API key configuration
-├── options.js          # API key persistence in chrome.storage.local
-├── overlay.css         # Dark theme floating overlay styles
+├── options.html        # Settings UI (API key, Screen Lens QR pairing, LocalSend toggle)
+├── options.js          # Settings persistence, port probing & LocalSend LAN scanner
+├── overlay.css         # Floating overlay base styles
+├── qrcode.js           # Zero-dependency offline QR code generator
+├── sidepanel.html      # Chrome SidePanel study companion UI
+├── sidepanel.js        # SidePanel question list, OmniVault staging & LocalSend trigger
+├── sync.bat            # Zero-friction Windows wrapper for sync.ps1
 ├── sync.ps1            # Ecosystem Git sync & secret detection engine
 ├── AGENTS.md           # Agent guidelines & verification workflows
 ├── LICENSE             # MIT License
@@ -46,45 +54,54 @@ screen-qa-extension/
 3. Enable **Developer mode** toggle in the top right corner.
 4. Click **Load unpacked** and select the `screen-qa-extension` directory.
 5. Right-click the extension icon in your browser toolbar, select **Options** (or open details > Extension options).
-6. Enter your Google Gemini API key (`AIza...`) and click **Save**.
+6. Enter your Google Gemini API key (`AIza...`) if running standalone without the local Fleet-Orchestrator server, and click **Save API key**.
 
-### Phone pairing UI scaffold
+### Phone Pairing (Screen Lens PWA & LocalSend Wireless Relay)
 
-The options page includes fields for a Lens service URL and a locally stored pairing token. Generate a token, save the settings, then copy the resulting pairing link. The QR preview is intentionally a placeholder; QR generation and a phone-side pairing service are not implemented yet. Do not treat the scaffold token as authentication until the Lens service validates it.
+The extension supports two wireless phone delivery routes configured in `options.html`:
 
-The local link-handling fixture at `tests/fixtures/pairing-link.html` can be opened with a `pairing_token` query parameter to verify that a generated link carries the expected parameter. It does not perform device pairing or contact a server.
+1. **Screen Lens PWA + Offline QR Pairing**:
+   - Configure the Lens service URL (e.g., `http://192.168.1.5:8000/lens`) and generate a local pairing token.
+   - `qrcode.js` renders a self-contained offline QR code directly in the options page. Scan the QR code with your phone camera on the same Wi-Fi network to launch the Screen Lens HUD.
+   - The local link-handling fixture at `tests/fixtures/pairing-link.html` can be opened with a `pairing_token` query parameter to verify URL parameter generation offline.
+
+2. **LocalSend Wireless Answer Relay (Port 53317)**:
+   - Open [LocalSend](https://localsend.org) on your phone or tablet connected to the same Wi-Fi/LAN.
+   - In `options.html`, enable the **Send via LocalSend** checkbox under **Wireless Answer Relay (LocalSend LAN)**.
+   - **Auto-Discovery or Manual Host**: Click **Scan LAN for LocalSend devices** to discover active LocalSend instances via UDP multicast (`224.0.0.167:53317`) and REST `/api/localsend/v2/info` probing, or enter your phone's LAN IP directly (default port `53317`, HTTP or HTTPS).
+   - **Structured Payload Delivery**: Whenever an answer is generated (or when clicking **Send test answer** in Options or **LocalSend** in the SidePanel), `background.js` POSTs a structured payload (`question`, `answer`, `option_letter`, `confidence`, `provenance`) to `/api/localsend/v2/prepare-upload` (and `/upload` when session tokens are issued).
+   - **Graceful Fallback**: If no LocalSend instance is found on the LAN or the receiver is unreachable, `background.js` falls back gracefully to the existing Screen Lens PWA route without interrupting in-page overlays.
 
 ---
 
 ## Architecture & Data Flow
 
 ```
-[Web Page DOM] ──(MutationObserver)──> [content.js] ──(TreeWalker)──> Question Found
+[Web Page DOM] ──(MutationObserver)──> [content.js] ──(Container Hoisting)──> Question Found
                                               │
                                    chrome.runtime.sendMessage
                                               │
                                               ▼
-[Gemini Flash API] <──(fetch)── [background.js (Service Worker)]
-        │                                     │
-        └────── Return Answer Candidate ──────┘
-                        │
-                        ▼
-                [content.js Overlay] (Anchored to DOM element)
+[Fleet-Orchestrator :8000 / Gemini Flash] <── [background.js (Service Worker)]
+                                              │
+                     ┌────────────────────────┴────────────────────────┐
+                     ▼                                                 ▼
+      [content.js Closed Shadow HUD]                 [LocalSend LAN :53317 / Screen Lens PWA]
 ```
 
 ---
 
 ## Repository Sync & Maintenance
 
-This repository follows ecosystem standards using `sync.ps1`:
+This repository follows ecosystem standards using `sync.bat` / `sync.ps1`:
 
 ```powershell
 # Routine automated sync
-.\sync.ps1
+.\sync.bat
 
 # Custom semantic commit
-.\sync.ps1 -m "feat(overlay): add markdown formatting support"
+.\sync.bat -m "feat(localsend): add wireless answer relay to phone (#3)"
 
 # Pull only with rebase
-.\sync.ps1 -PullOnly
+.\sync.bat -PullOnly
 ```

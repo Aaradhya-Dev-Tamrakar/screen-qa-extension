@@ -80,9 +80,15 @@ function renderQuestions(items) {
     omniBtn.textContent = "Stage to OmniVault";
     omniBtn.onclick = () => stageToOmniVault(item.question, item.answer, omniBtn);
 
+    const localSendBtn = document.createElement("button");
+    localSendBtn.className = "btn-action";
+    localSendBtn.textContent = "LocalSend";
+    localSendBtn.onclick = () => pushItemViaLocalSend(item.question, item.answer, localSendBtn);
+
     btnGroup.appendChild(consensusBtn);
     btnGroup.appendChild(copyBtn);
     btnGroup.appendChild(omniBtn);
+    btnGroup.appendChild(localSendBtn);
 
     card.appendChild(qEl);
     card.appendChild(aEl);
@@ -122,6 +128,33 @@ async function stageToOmniVault(question, answer, btn) {
     list.push({ question, answer, timestamp: Date.now() });
     chrome.storage.local.set({ omnivault_staging: list });
   });
+}
+
+async function pushItemViaLocalSend(question, answer, btn) {
+  btn.textContent = "Sending…";
+  btn.disabled = true;
+  try {
+    const res = await chrome.runtime.sendMessage({
+      type: "SEND_LOCALSEND_PAYLOAD",
+      payload: {
+        question,
+        answer: answer || "",
+        confidence: 0.95,
+        provenance: ["sidepanel_manual_relay"],
+      },
+    });
+    if (res && res.ok) {
+      btn.textContent = "Sent!";
+    } else {
+      btn.textContent = "PWA Fallback";
+    }
+  } catch {
+    btn.textContent = "PWA Fallback";
+  }
+  setTimeout(() => {
+    btn.textContent = "LocalSend";
+    btn.disabled = false;
+  }, 2000);
 }
 
 openLensBtn.addEventListener("click", () => {

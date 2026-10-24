@@ -9,6 +9,13 @@ const qrcodeContainer = document.getElementById("qrcodeContainer");
 const qrHint = document.getElementById("qrHint");
 const fleetServerStatus = document.getElementById("fleetServerStatus");
 const fleetStatusText = document.getElementById("fleetStatusText");
+const localSendEnabledInput = document.getElementById("localSendEnabled");
+const localSendHostInput = document.getElementById("localSendHost");
+const localSendPortInput = document.getElementById("localSendPort");
+const localSendProtocolSelect = document.getElementById("localSendProtocol");
+const localSendPinInput = document.getElementById("localSendPin");
+const localSendDevicesContainer = document.getElementById("localSendDevices");
+const localSendStatus = document.getElementById("localSendStatus");
 
 const DEFAULT_LAN_IP = "192.168.1.5";
 let activePort = 8000;
@@ -127,8 +134,26 @@ document.getElementById("btnLocalhostPreset")?.addEventListener("click", () => {
 
 // Load saved settings
 chrome.storage.local.get(
-  ["geminiApiKey", "lensUrl", "pairingToken"],
-  ({ geminiApiKey, lensUrl, pairingToken }) => {
+  [
+    "geminiApiKey",
+    "lensUrl",
+    "pairingToken",
+    "localSendEnabled",
+    "localSendHost",
+    "localSendPort",
+    "localSendProtocol",
+    "localSendPin",
+  ],
+  ({
+    geminiApiKey,
+    lensUrl,
+    pairingToken,
+    localSendEnabled,
+    localSendHost,
+    localSendPort,
+    localSendProtocol,
+    localSendPin,
+  }) => {
     if (chrome.runtime.lastError) {
       setPairingMessage(`Could not load pairing settings: ${chrome.runtime.lastError.message}`);
       return;
@@ -139,6 +164,12 @@ chrome.storage.local.get(
     lensUrlInput.value = lensUrl || `http://${DEFAULT_LAN_IP}:8000/lens`;
     pairingTokenInput.value = pairingToken || createPairingToken();
     updatePairingLink();
+
+    if (localSendEnabledInput) localSendEnabledInput.checked = Boolean(localSendEnabled);
+    if (localSendHostInput) localSendHostInput.value = localSendHost || "";
+    if (localSendPortInput) localSendPortInput.value = String(localSendPort || 53317);
+    if (localSendProtocolSelect) localSendProtocolSelect.value = localSendProtocol || "http";
+    if (localSendPinInput) localSendPinInput.value = localSendPin || "";
 
     // Probe Fleet backend
     probeFleetHealth();
@@ -211,4 +242,133 @@ document.getElementById("copyPairingLink").addEventListener("click", async () =>
     const message = error instanceof Error ? error.message : "clipboard access was denied";
     setPairingMessage(`Could not copy the pairing link: ${message}`);
   }
+});
+
+function setLocalSendMessage(message) {
+  if (localSendStatus) {
+    localSendStatus.textContent = message;
+  }
+}
+
+function saveLocalSendSettings(showMessage = true) {
+  const localSendEnabled = Boolean(localSendEnabledInput?.checked);
+  const localSendHost = (localSendHostInput?.value || "").trim();
+  const parsedPort = Number(localSendPortInput?.value || 53317);
+  const localSendPort = parsedPort >= 1 && parsedPort <= 65535 ? parsedPort : 53317;
+  const localSendProtocol = localSendProtocolSelect?.value === "https" ? "https" : "http";
+  const localSendPin = (localSendPinInput?.value || "").trim();
+
+  chrome.storage.local.set(
+    {
+      localSendEnabled,
+      localSendHost,
+      localSendPort,
+      localSendProtocol,
+      localSendPin,
+    },
+    () => {
+      if (chrome.runtime.lastError) {
+        setLocalSendMessage(`Could not save LocalSend settings: ${chrome.runtime.lastError.message}`);
+        return;
+      }
+      if (showMessage) {
+        setLocalSendMessage(
+          localSendEnabled
+            ? `LocalSend relay enabled (${localSendHost || "auto-discover"}:${localSendPort}).`
+            : "LocalSend settings saved (relay disabled)."
+        );
+      }
+    }
+  );
+}
+
+localSendEnabledInput?.addEventListener("change", () => saveLocalSendSettings(true));
+document.getElementById("saveLocalSend")?.addEventListener("click", () => saveLocalSendSettings(true));
+
+document.getElementById("discoverLocalSend")?.addEventListener("click", () => {
+  setLocalSendMessage("Scanning LAN for active LocalSend receivers (port 53317)...");
+  if (localSendDevicesContainer) localSendDevicesContainer.innerHTML = "";
+
+  const host = (localSendHostInput?.value || "").trim();
+  const port = Number(localSendPortInput?.value || 53317);
+  const protocol = localSendProtocolSelect?.value || "http";
+
+  chrome.runtime.sendMessage(
+    {
+      type: "DISCOVER_LOCALSEND",
+      options: { host, port, protocol },
+    },
+    (response) => {
+      if (chrome.runtime.lastError || !response) {
+        setLocalSendMessage(
+          `Discovery error: ${chrome.runtime.lastError?.message || "No response from background worker."}`
+        );
+        return;
+      }
+
+      const peers = response.peers || [];
+      if (peers.length === 0) {
+        setLocalSendMessage(
+          "No LocalSend receivers detected on LAN. Ensure LocalSend is open on your phone, or enter its IP manually."
+        );
+        return;
+      }
+
+      setLocalSendMessage(`Found ${peers.length} LocalSend device(s). Click a device pill to select it:`);
+      peers.forEach((peer) => {
+        const pill = document.createElement("button");
+        pill.type = "button";
+        pill.className = "pill";
+        const modelSuffix = peer.deviceModel ? ` (${peer.deviceModel})` : "";
+        pill.textContent = `${peer.alias || peer.host}${modelSuffix} - ${peer.host}:${peer.port} [${peer.protocol}]`;
+        pill.addEventListener("click", () => {
+          if (localSendHostInput) localSendHostInput.value = peer.host;
+          if (localSendPortInput) localSendPortInput.value = String(peer.port || 53317);
+          if (localSendProtocolSelect) localSendProtocolSelect.value = peer.protocol || "http";
+          if (localSendEnabledInput) localSendEnabledInput.checked = true;
+          saveLocalSendSettings(false);
+          setLocalSendMessage(`Selected ${peer.alias || peer.host} (${peer.host}:${peer.port}) and saved.`);
+        });
+        localSendDevicesContainer?.appendChild(pill);
+      });
+    }
+  );
+});
+
+document.getElementById("testLocalSend")?.addEventListener("click", () => {
+  saveLocalSendSettings(false);
+  setLocalSendMessage("Sending test answer payload via LocalSend...");
+
+  const host = (localSendHostInput?.value || "").trim();
+  const port = Number(localSendPortInput?.value || 53317);
+  const protocol = localSendProtocolSelect?.value || "http";
+  const pin = (localSendPinInput?.value || "").trim();
+
+  chrome.runtime.sendMessage(
+    {
+      type: "SEND_LOCALSEND_PAYLOAD",
+      payload: {
+        question: "Screen Q&A LocalSend wireless relay verification test",
+        answer: "C) 8 kHz (Nyquist sampling rate is 2 * fm)",
+        option_letter: "C",
+        confidence: 0.99,
+        provenance: ["localsend_test"],
+      },
+      options: { host, port, protocol, pin },
+    },
+    (response) => {
+      if (chrome.runtime.lastError || !response) {
+        setLocalSendMessage(`Relay error: ${chrome.runtime.lastError?.message || "No response"}`);
+        return;
+      }
+      if (response.ok) {
+        const targetName = response.peer?.alias || response.peer?.host || host || "LAN device";
+        setLocalSendMessage(`Delivered test payload to ${targetName} (${response.transport}).`);
+      } else {
+        setLocalSendMessage(
+          `Fallback active (${response.fallback || "pwa_route"}): ${response.reason || "Receiver unreachable."}`
+        );
+      }
+    }
+  );
 });
