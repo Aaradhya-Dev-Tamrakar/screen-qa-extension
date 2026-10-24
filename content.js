@@ -330,6 +330,12 @@ function showAdaptiveAnswer(anchorEl, containerEl, question, answerText, isLoadi
     if (targetOptionEl) {
       optionDiv.textContent = `✓ Option ${optionLetter}`;
       optionDiv.style.display = "inline-flex";
+      try {
+        targetOptionEl.style.outline = "2px solid #22c55e";
+        targetOptionEl.style.outlineOffset = "2px";
+        targetOptionEl.style.backgroundColor = "rgba(34, 197, 94, 0.14)";
+        targetOptionEl.style.borderRadius = "6px";
+      } catch (_) {}
     }
 
     const letterSpan = document.createElement("span");
@@ -473,6 +479,7 @@ function scan() {
   cleanupStaleOverlays();
 
   const items = extractQuestions(document.body);
+  console.log(`[Screen Q&A] Scanned page; detected ${items.length} question(s)`);
   for (const item of items) {
     handleQuestionItem(item);
   }
@@ -525,6 +532,14 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     sendResponse({ ok: true, isScanActive });
     return true;
   }
+  if (message?.type === "TRIGGER_SCAN") {
+    console.log("[Screen Q&A] Manual scan triggered via SidePanel/HotKey");
+    isScanActive = true;
+    seen.clear();
+    scan();
+    sendResponse({ ok: true, count: activeOverlays.size });
+    return true;
+  }
   if (message?.type === "GET_PAGE_QUESTIONS") {
     const list = Array.from(activeOverlays.values()).map((d) => ({
       question: d.question,
@@ -535,5 +550,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 });
 
-// Initial scan
+console.log("[Screen Q&A v0.4.0] Continuous HUD active on:", window.location.href);
 debouncedScan();
+window.addEventListener("load", debouncedScan);

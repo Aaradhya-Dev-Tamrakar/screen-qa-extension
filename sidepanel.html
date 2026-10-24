@@ -167,9 +167,15 @@
   </style>
 </head>
 <body>
-  <header>
-    <div class="brand-title">Screen Q&A Study Drawer</div>
-    <div class="status-pill" id="statusPill">Checking Fleetâ€¦</div>
+    <header style="display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 16px; padding-bottom: 12px; border-bottom: 1px solid var(--card-border);">
+    <div>
+      <div class="brand-title">Screen Q&A Study Drawer</div>
+      <div id="targetTabInfo" style="font-size: 11px; color: var(--text-muted); margin-top: 3px; max-width: 170px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">Detecting tab...</div>
+    </div>
+    <div style="display: flex; gap: 6px; align-items: center; flex-shrink: 0;">
+      <button id="scanTabBtn" style="background: #27272a; border: 1px solid #3f3f46; color: #f4f4f5; border-radius: 6px; padding: 4px 8px; font-size: 11px; cursor: pointer; font-weight: 500;">Scan Tab</button>
+      <div class="status-pill" id="statusPill">Checking Fleet...</div>
+    </div>
   </header>
 
   <div class="section-title">Active Tab Questions</div>

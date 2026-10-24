@@ -20,10 +20,55 @@ async function checkFleetHealth() {
   statusPill.className = "status-pill offline";
 }
 
+// Resolve the active web page tab across Chromium, Brave, and Vivaldi Web Panels
+async function getActiveWebTab() {
+  try {
+    // 1. Last focused normal window (standard for side panels and web panels)
+    const focusedTabs = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
+    const validFocused = (focusedTabs || []).find(
+      (t) => t.url && !t.url.startsWith("chrome-extension://") && !t.url.startsWith("chrome://") && !t.url.startsWith("vivaldi://")
+    );
+    if (validFocused) return validFocused;
+
+    // 2. Active tab in current window
+    const currentTabs = await chrome.tabs.query({ active: true, currentWindow: true });
+    const validCurrent = (currentTabs || []).find(
+      (t) => t.url && !t.url.startsWith("chrome-extension://") && !t.url.startsWith("chrome://") && !t.url.startsWith("vivaldi://")
+    );
+    if (validCurrent) return validCurrent;
+
+    // 3. Fallback across all active tabs
+    const allActive = await chrome.tabs.query({ active: true });
+    const validActive = (allActive || []).find(
+      (t) => t.url && !t.url.startsWith("chrome-extension://") && !t.url.startsWith("chrome://") && !t.url.startsWith("vivaldi://")
+    );
+    if (validActive) return validActive;
+
+    // 4. Any tab with an http, https, or file URL
+    const allTabs = await chrome.tabs.query({});
+    return (allTabs || []).find(
+      (t) => t.url && (t.url.startsWith("http://") || t.url.startsWith("https://") || t.url.startsWith("file:///"))
+    );
+  } catch (err) {
+    console.debug("[Sidepanel] Tab query failed", err);
+    return null;
+  }
+}
+
 // Fetch detected questions from active tab content script
 async function loadTabQuestions() {
-  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-  if (!tab || !tab.id) return;
+  const tabInfoEl = document.getElementById("targetTabInfo");
+  const tab = await getActiveWebTab();
+  if (!tab || !tab.id) {
+    if (tabInfoEl) tabInfoEl.textContent = "No web tab active";
+    return;
+  }
+
+  const tabTitle = tab.title || (tab.url ? new URL(tab.url).pathname.split("/").pop() : "Active Tab");
+  if (tabInfoEl) {
+    tabInfoEl.textContent = `Tab: ${tabTitle}`;
+    tabInfoEl.title = tab.url;
+  }
 
   try {
     const response = await chrome.tabs.sendMessage(tab.id, { type: "GET_PAGE_QUESTIONS" });
@@ -31,7 +76,47 @@ async function loadTabQuestions() {
       renderQuestions(response.questions);
     }
   } catch (err) {
-    // Content script might not be injected or page is chrome://
+    // If content script is missing or connection failed, auto-inject it into the tab
+    console.debug("[Sidepanel] Auto-injecting content script into tab", tab.id, tab.url);
+    try {
+      await chrome.scripting.executeScript({
+        target: { tabId: tab.id },
+        files: ["content.js"],
+      });
+      await chrome.scripting.insertCSS({
+        target: { tabId: tab.id },
+        files: ["overlay.css"],
+      }).catch(() => {});
+    } catch (_) {}
+  }
+}
+
+async function triggerManualScan() {
+  const scanBtn = document.getElementById("scanTabBtn");
+  if (scanBtn) {
+    scanBtn.textContent = "Scanning...";
+    scanBtn.disabled = true;
+  }
+
+  const tab = await getActiveWebTab();
+  if (tab && tab.id) {
+    try {
+      await chrome.scripting.executeScript({
+        target: { tabId: tab.id },
+        files: ["content.js"],
+      }).catch(() => {});
+
+      await chrome.tabs.sendMessage(tab.id, { type: "TRIGGER_SCAN" });
+    } catch (_) {}
+  }
+
+  await loadTabQuestions();
+
+  if (scanBtn) {
+    setTimeout(() => {
+      scanBtn.textContent = "Scan Tab";
+      scanBtn.disabled = false;
+    }, 800);
   }
 }
 
@@ -167,3 +252,6 @@ setInterval(checkFleetHealth, 5000);
 
 loadTabQuestions();
 setInterval(loadTabQuestions, 2500);
+
+
+document.getElementById("scanTabBtn")?.addEventListener("click", triggerManualScan);
