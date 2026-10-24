@@ -2,9 +2,67 @@
 // Manages hybrid Fleet-Orchestrator routing with fallback, side panel dispatch,
 // LocalSend LAN discovery + direct REST relay (port 53317), and Alt+Q scan toggle command handling.
 
-const FLEET_ENDPOINT = "http://127.0.0.1:8000/api/v1/qa/ask";
-const FLEET_LOCALSEND_DISCOVER = "http://127.0.0.1:8000/api/v1/qa/localsend/discover";
-const FLEET_LOCALSEND_RELAY = "http://127.0.0.1:8000/api/v1/qa/localsend/relay";
+const DEFAULT_FLEET_BASE = "http://127.0.0.1:8000";
+let cachedFleetBase = null;
+
+// Dynamic port probe candidates
+const PROBE_PORTS = [8000, 8001, 8080, 8765];
+
+async function getFleetBaseUrl(forceProbe = false) {
+  if (cachedFleetBase && !forceProbe) {
+    return cachedFleetBase;
+  }
+
+  const { fleetUrl } = await chrome.storage.local.get({ fleetUrl: DEFAULT_FLEET_BASE });
+  let candidate = (fleetUrl || DEFAULT_FLEET_BASE).replace(/\/+$/, "");
+
+  // Quick health check on configured URL
+  try {
+    const res = await fetch(`${candidate}/api/v1/qa/status`, {
+      method: "GET",
+      signal: AbortSignal.timeout(1000),
+    });
+    if (res.ok) {
+      cachedFleetBase = candidate;
+      return candidate;
+    }
+  } catch {}
+
+  // Auto-probe fallback ports if primary is down
+  for (const port of PROBE_PORTS) {
+    const probeUrl = `http://127.0.0.1:${port}`;
+    try {
+      const res = await fetch(`${probeUrl}/api/v1/qa/status`, {
+        method: "GET",
+        signal: AbortSignal.timeout(800),
+      });
+      if (res.ok) {
+        cachedFleetBase = probeUrl;
+        chrome.storage.local.set({ fleetUrl: probeUrl }).catch(() => {});
+        return probeUrl;
+      }
+    } catch {}
+  }
+
+  // Fall back to configured URL even if currently offline
+  cachedFleetBase = candidate;
+  return candidate;
+}
+
+async function getFleetAskUrl() {
+  const base = await getFleetBaseUrl();
+  return `${base}/api/v1/qa/ask`;
+}
+
+async function getFleetLocalSendDiscoverUrl() {
+  const base = await getFleetBaseUrl();
+  return `${base}/api/v1/qa/localsend/discover`;
+}
+
+async function getFleetLocalSendRelayUrl() {
+  const base = await getFleetBaseUrl();
+  return `${base}/api/v1/qa/localsend/relay`;
+}
 const DIRECT_GEMINI_ENDPOINT =
   "https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent";
 const LOCALSEND_DEFAULT_PORT = 53317;
@@ -295,7 +353,8 @@ async function relayAnswerViaLocalSend(qaPayload, overrideOptions = {}) {
   try {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 3500);
-    const res = await fetch(FLEET_LOCALSEND_RELAY, {
+    const relayUrl = await getFleetLocalSendRelayUrl();
+    const res = await fetch(relayUrl, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -352,7 +411,8 @@ async function askFleetOrchestrator(question, context, mode) {
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
   try {
-    const res = await fetch(FLEET_ENDPOINT, {
+    const askUrl = await getFleetAskUrl();
+    const res = await fetch(askUrl, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ question, context, mode }),

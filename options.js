@@ -21,6 +21,56 @@ const DEFAULT_LAN_IP = "192.168.1.5";
 let activePort = 8000;
 let qrInstance = null;
 
+const fleetUrlInput = document.getElementById("fleetUrl");
+const backendStatus = document.getElementById("backendStatus");
+
+function setBackendMessage(msg) {
+  if (backendStatus) backendStatus.textContent = msg;
+}
+
+// Preset button handlers for fleet ports
+document.getElementById("btnFleetPort8000")?.addEventListener("click", () => {
+  if (fleetUrlInput) fleetUrlInput.value = "http://127.0.0.1:8000";
+  probeFleetHealth();
+});
+document.getElementById("btnFleetPort8001")?.addEventListener("click", () => {
+  if (fleetUrlInput) fleetUrlInput.value = "http://127.0.0.1:8001";
+  probeFleetHealth();
+});
+document.getElementById("btnFleetPort8080")?.addEventListener("click", () => {
+  if (fleetUrlInput) fleetUrlInput.value = "http://127.0.0.1:8080";
+  probeFleetHealth();
+});
+
+document.getElementById("btnProbeFleet")?.addEventListener("click", async () => {
+  setBackendMessage("Probing available ports...");
+  await probeFleetHealth();
+  if (activePort && fleetUrlInput) {
+    fleetUrlInput.value = `http://127.0.0.1:${activePort}`;
+    chrome.storage.local.set({
+    fleetUrl, fleetUrl: fleetUrlInput.value });
+    setBackendMessage(`Auto-detected active backend on port ${activePort}`);
+  }
+});
+
+document.getElementById("saveBackend")?.addEventListener("click", () => {
+  const url = (fleetUrlInput?.value || "").trim();
+  if (!url) {
+    setBackendMessage("Enter a valid URL.");
+    return;
+  }
+  try {
+    const parsed = new URL(url);
+    chrome.storage.local.set({ fleetUrl: parsed.origin }, () => {
+      setBackendMessage("Backend URL saved.");
+      probeFleetHealth();
+    });
+  } catch {
+    setBackendMessage("Invalid URL format.");
+  }
+});
+
+
 function buildPairingLink() {
   const lensUrl = lensUrlInput.value.trim();
   const pairingToken = pairingTokenInput.value.trim();
@@ -85,21 +135,37 @@ function createPairingToken() {
 
 // Dynamic Port Probe & Health Check
 async function probeFleetHealth() {
-  const portsToProbe = [8000, 8001, 8080];
+  // First test configured fleetUrl
+  const configured = (fleetUrlInput?.value || "").trim();
+  const portsToProbe = [8000, 8001, 8080, 8765];
   let foundPort = null;
 
-  for (const port of portsToProbe) {
+  if (configured) {
     try {
-      const res = await fetch(`http://127.0.0.1:${port}/health`, {
+      const parsed = new URL(configured);
+      const testPort = parsed.port || (parsed.protocol === "https:" ? 443 : 80);
+      const res = await fetch(`${parsed.origin}/api/v1/qa/status`, {
         method: "GET",
-        signal: AbortSignal.timeout(1200),
+        signal: AbortSignal.timeout(1500),
       });
       if (res.ok) {
-        foundPort = port;
-        break;
+        foundPort = Number(testPort);
       }
-    } catch {
-      // Continue to next port
+    } catch {}
+  }
+
+  if (!foundPort) {
+    for (const port of portsToProbe) {
+      try {
+        const res = await fetch(`http://127.0.0.1:${port}/api/v1/qa/status`, {
+          method: "GET",
+          signal: AbortSignal.timeout(1000),
+        });
+        if (res.ok) {
+          foundPort = port;
+          break;
+        }
+      } catch {}
     }
   }
 
@@ -135,6 +201,7 @@ document.getElementById("btnLocalhostPreset")?.addEventListener("click", () => {
 // Load saved settings
 chrome.storage.local.get(
   [
+    "fleetUrl",
     "geminiApiKey",
     "lensUrl",
     "pairingToken",

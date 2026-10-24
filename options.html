@@ -44,6 +44,33 @@
 <body>
   <main>
     <h1>Screen Q&amp;A settings</h1>
+
+    <section aria-labelledby="backendHeading">
+      <h2 id="backendHeading">Fleet-Orchestrator Backend</h2>
+      <p class="hint">Dynamic server endpoint for Copilot Fleet (31 workers), Gemini 30-key rotator, and Fellowship Exam RAG syllabus grounding. Automatically discovers and probes ports.</p>
+      
+      <label for="fleetUrl">Fleet Backend URL</label>
+      <div style="display: flex; gap: 8px;">
+        <input id="fleetUrl" type="url" inputmode="url" autocomplete="url" placeholder="http://127.0.0.1:8000" style="flex: 1;" />
+        <button id="btnProbeFleet" type="button" class="secondary" style="white-space: nowrap;">Auto-Detect Port</button>
+      </div>
+
+      <div class="presets">
+        <span class="hint" style="font-size: 12px; font-weight: 600;">Presets:</span>
+        <button type="button" class="pill" id="btnFleetPort8000">Port 8000 (Default)</button>
+        <button type="button" class="pill" id="btnFleetPort8001">Port 8001</button>
+        <button type="button" class="pill" id="btnFleetPort8080">Port 8080</button>
+      </div>
+
+      <div id="fleetServerStatus" class="status-badge online" style="margin-top: 10px;">
+        <span id="fleetDot">●</span> <span id="fleetStatusText">Probing Fleet Orchestrator...</span>
+      </div>
+
+      <div class="actions">
+        <button id="saveBackend" type="button">Save Backend URL</button>
+      </div>
+      <div id="backendStatus" role="status" aria-live="polite"></div>
+    </section>
     <section aria-labelledby="apiHeading">
       <h2 id="apiHeading">Gemini API (Standalone Fallback)</h2>
       <label for="apiKey">Gemini API key</label>
@@ -67,9 +94,7 @@
         <button type="button" class="pill" id="btnLocalhostPreset">Use Localhost (127.0.0.1:8000)</button>
       </div>
 
-      <div id="fleetServerStatus" class="status-badge online" style="margin-top: 10px;">
-        <span id="fleetDot">●</span> <span id="fleetStatusText">Probing Fleet Orchestrator...</span>
-      </div>
+      
 
       <label for="pairingToken">Pairing token</label>
       <input id="pairingToken" type="text" autocomplete="off" spellcheck="false" />
