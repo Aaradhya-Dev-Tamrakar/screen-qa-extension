@@ -24,7 +24,13 @@
     button:focus-visible, input:focus-visible { outline: 3px solid #8ab4ff; outline-offset: 2px; }
     .actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
     .presets { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; align-items: center; }
-    .hint, #status, #pairingStatus { color: #526078; font-size: 13px; line-height: 1.5; }
+    .hint, #status, #pairingStatus, #localSendStatus { color: #526078; font-size: 13px; line-height: 1.5; }
+    .toggle-row { display: flex; align-items: center; gap: 10px; margin: 12px 0; cursor: pointer; font-size: 14px; font-weight: 600; }
+    .toggle-row input[type="checkbox"] { width: 18px; height: 18px; margin: 0; cursor: pointer; }
+    .grid-2 { display: grid; grid-template-columns: 1fr 120px 120px; gap: 10px; align-items: end; }
+    select { box-sizing: border-box; width: 100%; padding: 9px 10px; border: 1px solid #b8c2d2; border-radius: 6px; font: inherit; background: #fff; }
+    .device-list { margin-top: 10px; display: flex; flex-wrap: wrap; gap: 6px; }
+    @media (max-width: 540px) { .grid-2 { grid-template-columns: 1fr; } }
     .status-badge { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; padding: 4px 8px; border-radius: 6px; margin-top: 8px; }
     .status-badge.online { background: #ecfdf5; color: #047857; border: 1px solid #a7f3d0; }
     .status-badge.offline { background: #fff1f2; color: #be123c; border: 1px solid #fecdd3; }
@@ -85,6 +91,46 @@
         <div id="qrcodeContainer"></div>
         <span id="qrHint" class="hint" style="margin-top: 10px;">Scan with your phone camera to launch Screen Lens directly.</span>
       </div>
+    </section>
+
+    <section aria-labelledby="localSendHeading">
+      <h2 id="localSendHeading">Wireless Answer Relay (LocalSend LAN)</h2>
+      <p class="hint">Push structured JSON answer payloads directly to a phone or tablet running LocalSend on the same Wi-Fi network (default port 53317). Falls back automatically to the Screen Lens PWA route if no LocalSend receiver is reachable.</p>
+
+      <label class="toggle-row" for="localSendEnabled">
+        <input type="checkbox" id="localSendEnabled" />
+        <span>Send via LocalSend</span>
+      </label>
+
+      <div class="grid-2">
+        <div>
+          <label for="localSendHost">Receiver IP or hostname (optional — auto-discovers if blank)</label>
+          <input id="localSendHost" type="text" autocomplete="off" spellcheck="false" placeholder="e.g. 192.168.1.11" />
+        </div>
+        <div>
+          <label for="localSendPort">Port</label>
+          <input id="localSendPort" type="number" min="1" max="65535" value="53317" />
+        </div>
+        <div>
+          <label for="localSendProtocol">Protocol</label>
+          <select id="localSendProtocol">
+            <option value="http">HTTP</option>
+            <option value="https">HTTPS</option>
+          </select>
+        </div>
+      </div>
+
+      <label for="localSendPin">Receiver PIN (optional)</label>
+      <input id="localSendPin" type="password" autocomplete="off" placeholder="Leave blank if PIN is not required" />
+
+      <div class="actions">
+        <button id="saveLocalSend" type="button">Save LocalSend settings</button>
+        <button class="secondary" id="discoverLocalSend" type="button">Scan LAN for LocalSend devices</button>
+        <button class="secondary" id="testLocalSend" type="button">Send test answer</button>
+      </div>
+
+      <div id="localSendDevices" class="device-list" aria-live="polite"></div>
+      <div id="localSendStatus" role="status" aria-live="polite" style="margin-top: 8px;"></div>
     </section>
   </main>
   <script src="qrcode.js"></script>
